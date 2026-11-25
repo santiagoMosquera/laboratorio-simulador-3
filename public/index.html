@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ed">
+  <title>Laboratorio del Simulador 3 · KrakeDev</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div><p class="brand">KrakeDev / AIF-C01</p><h1>Laboratorio del Simulador 3</h1></div>
+    <nav aria-label="Pantallas del laboratorio">
+      <button id="show-chat" type="button" aria-current="page">Chat</button>
+      <button id="show-settings" type="button">Configuración</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="chat" class="workspace" aria-label="Chat">
+      <aside class="panel rail">
+        <button class="primary" id="new-chat" type="button">+ Nuevo chat</button>
+        <h2>Conversaciones</h2>
+        <div id="chats"></div>
+      </aside>
+      <div class="panel conversation">
+        <div class="conversation-top">
+          <div><h2 id="chat-title">Chat nuevo</h2><p id="chat-config"></p></div>
+          <button class="quiet" id="change-config" type="button">Cambiar configuración</button>
+        </div>
+        <div id="messages" aria-live="polite"></div>
+        <form id="chat-form">
+          <label for="question">Tu pregunta</label>
+          <textarea id="question" rows="2" maxlength="4000" required placeholder="¿Con qué puntaje apruebo el Simulador 3?"></textarea>
+          <div class="composer-footer"><p id="chat-status" role="status"></p><button class="primary" id="send" type="submit">Enviar</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section id="settings" class="panel settings" hidden>
+      <div class="section-head"><div><h2>Configuración</h2><p>Prepara una variante, actívala y pruébala en el chat.</p></div></div>
+      <form id="config-form">
+        <div class="columns">
+          <div><label for="saved">Configuraciones guardadas</label><select id="saved"></select></div>
+          <div><label for="name">Nombre de la configuración</label><input id="name" maxlength="70" required></div>
+        </div>
+        <label for="instructions">Instrucciones</label>
+        <textarea id="instructions" rows="7" maxlength="10000" placeholder="Deja este campo vacío para enviar solo la pregunta."></textarea>
+        <label for="mode">Fuente documental</label>
+        <select id="mode">
+          <option value="none">Sin documento</option>
+          <option value="pdf">Adjuntar PDF al contexto</option>
+          <option value="rag">Consultar PDF con RAG</option>
+        </select>
+        <div id="document" class="subpanel" hidden>
+          <label for="pdf" id="pdf-label"></label>
+          <div class="upload-row"><input id="pdf" type="file" accept=".pdf,application/pdf"><button type="button" id="upload">Cargar PDF</button></div>
+          <p id="doc-status" role="status"></p>
+          <p class="downloads"><a href="/manual-simulador-3.pdf" download>Manual de práctica</a><a href="/manual-simulador-3-demostracion.pdf" download>Manual de demostración</a></p>
+        </div>
+        <fieldset>
+          <legend>Opciones de la prueba</legend>
+          <label class="check"><input type="checkbox" id="history"> Usar historial del chat</label>
+          <label class="check"><input type="checkbox" id="progress"> Habilitar consulta de avance</label>
+          <label class="check"><input type="checkbox" id="exposure"> Habilitar listado de notas ficticias para la demostración de exposición</label>
+        </fieldset>
+        <div class="actions">
+          <button type="submit" class="primary">Guardar y activar</button>
+          <button type="button" id="duplicate">Guardar como nueva y activar</button>
+        </div>
+        <fieldset class="access">
+          <legend>Acceso a la API</legend>
+          <label for="access-code">Código del laboratorio</label>
+          <input id="access-code" type="password" autocomplete="off" maxlength="200" placeholder="Código entregado por el instructor">
+        </fieldset>
+        <p id="config-status" role="status"></p>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "laboratorio-simulador-3",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "24.x" },
+  "scripts": { "dev": "node --env-file-if-exists=.env.local server/local.js", "test": "node --test" }
+}
