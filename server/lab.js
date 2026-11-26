@@ -91,7 +91,20 @@ function usageOf(calls) {
   return counts;
 }
 
-async function chat(body, client, unseal, seal, model) {
+function herramientaMcp(env) {
+  const token = env.MCP_ACCESS_TOKEN?.trim();
+  let url;
+  try { url = new URL(env.MCP_SERVER_URL?.trim()); } catch { /* Se valida abajo. */ }
+  if (!token || url?.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+    throw problem("Configura MCP_SERVER_URL con la URL HTTPS de /api/mcp y MCP_ACCESS_TOKEN en el servidor.", 503);
+  }
+  return {
+    type: "mcp", server_label: "simulador_3", server_url: url.href, authorization: token,
+    allowed_tools: [herramientaAvance.name], require_approval: "never",
+  };
+}
+
+async function chat(body, client, unseal, seal, model, env) {
   const { question, config, threadId, historyRef } = body;
   if (typeof question !== "string" || !question.trim() || question.length > 4000 ||
       !config || typeof config.instructions !== "string" || config.instructions.length > 10000 ||
@@ -101,14 +114,18 @@ async function chat(body, client, unseal, seal, model) {
 
   const doc = config.mode === "none" ? null : unseal(config.docRef, "doc");
   if (doc && doc.mode !== config.mode) throw problem("Vuelve a cargar el PDF para este modo de consulta.");
+  const progressTool = config.progressTool ?? (config.progress === true ? "direct" : "none");
+  if (!["none", "direct", "mcp"].includes(progressTool)) throw problem("El modo de consulta de avance no es válido.");
+  const mcp = progressTool === "mcp" ? herramientaMcp(env) : null;
   const fingerprint = digest(JSON.stringify([config.instructions, config.mode, doc?.fileId, doc?.storeId,
-    config.progress === true, config.exposure === true])).toString("hex");
+    progressTool === "direct", config.exposure === true, ...(mcp ? [mcp.server_url] : [])])).toString("hex");
   const chain = config.history && historyRef ? unseal(historyRef, "chat") : null;
   const previous = chain?.threadId === threadId && chain.fingerprint === fingerprint ? chain.id : null;
 
   const tools = [];
   if (doc?.mode === "rag") tools.push({ type: "file_search", vector_store_ids: [doc.storeId], max_num_results: 3 });
-  if (config.progress === true) tools.push(herramientaAvance);
+  if (progressTool === "direct") tools.push(herramientaAvance);
+  if (mcp) tools.push(mcp);
   if (config.exposure === true) tools.push(herramientaExposicion);
   const attachPdf = doc?.mode === "pdf" && !previous;
   const input = attachPdf
@@ -118,7 +135,8 @@ async function chat(body, client, unseal, seal, model) {
   const requestBodies = [];
   const sendResponse = payload => {
     const body = JSON.stringify(payload);
-    requestBodies.push(body);
+    requestBodies.push(mcp ? JSON.stringify(payload, (key, value) =>
+      key === "authorization" ? "[oculto]" : value) : body);
     return client("/responses", body);
   };
   const calls = [await sendResponse({
@@ -131,9 +149,13 @@ async function chat(body, client, unseal, seal, model) {
 
   const activity = [];
   const fragments = [];
+  const mcpTrace = [];
   for (let step = 0; step < 4; step += 1) {
     const response = calls.at(-1);
     for (const item of response.output ?? []) {
+      if (mcp && ["mcp_list_tools", "mcp_call"].includes(item.type) && item.server_label === mcp.server_label) {
+        mcpTrace.push(item);
+      }
       if (item.type === "file_search_call") {
         for (const result of item.results ?? []) {
           fragments.push({ archivo: result.filename, texto: result.text, relevancia: result.score });
@@ -145,13 +167,15 @@ async function chat(body, client, unseal, seal, model) {
       const answer = (response.output ?? []).flatMap(item => item.type === "message" ? item.content ?? [] : [])
         .map(item => item.type === "output_text" ? item.text : item.type === "refusal" ? item.refusal : "")
         .filter(Boolean).join("\n");
-      if (!answer) throw problem("El modelo no devolvió una respuesta de texto para este turno.", 502);
+      const mcpFailure = mcpTrace.some(item => item.error || item.status === "failed" || item.status === "incomplete");
+      if (!answer && !mcpFailure) throw problem("El modelo no devolvió una respuesta de texto para este turno.", 502);
       return {
-        answer, usage: usageOf(calls), activity, fragments, requestBodies,
+        answer: answer || "La consulta MCP falló. Revisa la traza de este turno.",
+        usage: usageOf(calls), activity, fragments, requestBodies, mcpTrace,
         historyRef: config.history ? seal({ kind: "chat", threadId, fingerprint, id: response.id }) : null,
         context: {
           question, instructions: config.instructions, mode: config.mode, document: doc?.name ?? null,
-          attachedPdf: Boolean(attachPdf), linkedHistory: Boolean(previous), model,
+          attachedPdf: Boolean(attachPdf), linkedHistory: Boolean(previous), model, progressTool,
         },
       };
     }
@@ -160,7 +184,7 @@ async function chat(body, client, unseal, seal, model) {
       let data;
       let args = {};
       try { args = JSON.parse(call.arguments) ?? {}; } catch { /* La herramienta devolverá un error de entrada. */ }
-      if (call.name === herramientaAvance.name && config.progress === true) {
+      if (call.name === herramientaAvance.name && progressTool === "direct") {
         data = typeof args.cedula === "string" && /^\d{10}$/.test(args.cedula)
           ? consultarAvance(args.cedula)
           : { encontrada: false, detalle: "La cédula de práctica debe tener 10 dígitos." };
@@ -174,7 +198,8 @@ async function chat(body, client, unseal, seal, model) {
     });
     calls.push(await sendResponse({
       ...common, input: outputs, previous_response_id: response.id, store: true,
-      ...(doc?.mode === "rag" && { tools: tools.filter(tool => tool.type === "file_search"), include: ["file_search_call.results"] }),
+      ...((mcp || doc?.mode === "rag") && { tools: tools.filter(tool => tool.type !== "function") }),
+      ...(doc?.mode === "rag" && { include: ["file_search_call.results"] }),
       max_output_tokens: 1200,
     }));
   }
@@ -202,7 +227,7 @@ export async function handle(request, env = process.env, fetcher = fetch) {
       const current = await client("/vector_stores/" + doc.storeId + "/files/" + doc.fileId);
       return json({ state: current.status });
     }
-    if (action === "chat") return json(await chat(await request.json(), client, unseal, seal, env.OPENAI_MODEL?.trim() || "gpt-6-luna"));
+    if (action === "chat") return json(await chat(await request.json(), client, unseal, seal, env.OPENAI_MODEL?.trim() || "gpt-6-luna", env));
     return json({ error: "Operación desconocida." }, 404);
   } catch (error) {
     if (error.status) return json({ error: error.message }, error.status);

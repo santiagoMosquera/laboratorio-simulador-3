@@ -1,7 +1,7 @@
 const byId = id => document.getElementById(id);
 const storageKey = "krakedev-lab-v1";
 const id = () => crypto.randomUUID();
-const base = { id: "base", name: "Pregunta sola", instructions: "", mode: "none", history: false, progress: false, exposure: false, doc: null };
+const base = { id: "base", name: "Pregunta sola", instructions: "", mode: "none", history: false, progressTool: "none", exposure: false, doc: null };
 const newChat = () => ({ id: id(), title: "Chat nuevo", messages: [], historyRef: null });
 
 function load() {
@@ -59,7 +59,8 @@ function loadConfig(identifier) {
   const config = state.configs.find(item => item.id === identifier);
   configOptions(identifier);
   for (const field of ["name", "instructions", "mode"]) byId(field).value = config[field];
-  for (const field of ["history", "progress", "exposure"]) byId(field).checked = config[field];
+  for (const field of ["history", "exposure"]) byId(field).checked = config[field];
+  byId("progress-tool").value = config.progressTool ?? (config.progress ? "direct" : "none");
   draftDoc = config.doc;
   byId("pdf").value = "";
   byId("config-status").textContent = "";
@@ -89,7 +90,7 @@ function saveConfig(add) {
     name: byId("name").value.trim(),
     instructions: byId("instructions").value, mode,
     history: byId("history").checked,
-    progress: byId("progress").checked,
+    progressTool: byId("progress-tool").value,
     exposure: byId("exposure").checked,
     doc: mode === "none" ? null : draftDoc,
   };
@@ -187,7 +188,9 @@ function renderChat() {
       const configUsed = item.configName ?? "No registrada";
       const modelUsed = item.context?.model ?? "No registrado";
       const historyUsed = item.context?.linkedHistory ? " · Con historial" : "";
-      entry.append(label("p", "Configuración usada: " + configUsed + " · Modelo: " + modelUsed + historyUsed, "meta"));
+      const toolsUsed = { direct: "Función directa", mcp: "Servidor MCP" }[item.context?.progressTool];
+      entry.append(label("p", "Configuración usada: " + configUsed + " · Modelo: " + modelUsed + historyUsed +
+        (toolsUsed ? " · " + toolsUsed : ""), "meta"));
       entry.append(label("p", u ? "Entrada " + u.entrada.toLocaleString("es-EC") + " · Salida " + u.salida.toLocaleString("es-EC") +
         " · Total " + u.total.toLocaleString("es-EC") + " tokens · " + u.llamadas + (u.llamadas === 1 ? " llamada" : " llamadas") +
         (u.cache ? " · Caché " + u.cache.toLocaleString("es-EC") : "") : "La API no reportó el consumo completo para este turno.", "metrics"));
@@ -205,6 +208,10 @@ function renderChat() {
       if (item.context.mode === "rag") entry.append(details("Ver fragmentos recuperados",
         item.fragments.length ? item.fragments : "La API no devolvió fragmentos en este turno."));
       if (item.activity.length) entry.append(details("Ver actividad de este turno", item.activity));
+      if (item.context?.progressTool === "mcp") {
+        entry.append(details("Ver traza MCP de OpenAI", item.mcpTrace?.length ? item.mcpTrace :
+          "OpenAI no reportó descubrimiento ni invocación MCP en este turno."));
+      }
     }
     messages.append(entry);
   }
@@ -238,7 +245,7 @@ async function send(event) {
     });
     chat.messages.push({ role: "assistant", text: result.answer, configName: config.name,
       context: result.context, fragments: result.fragments, activity: result.activity, usage: result.usage,
-      requestBodies: result.requestBodies });
+      requestBodies: result.requestBodies, mcpTrace: result.mcpTrace });
     chat.historyRef = result.historyRef;
   } catch (error) {
     chat.messages = chat.messages.filter(item => item !== message);

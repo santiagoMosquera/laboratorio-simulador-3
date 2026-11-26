@@ -6,12 +6,12 @@
 
 1. Abre la aplicación y escribe el código del laboratorio en **Configuración**.
 2. Descarga **Manual de práctica** y **Manual de demostración** en Configuración al elegir un modo documental, o desde la carpeta `public/`.
-3. Usa **Guardar como nueva y activar** para conservar cada variante. Usa **Nuevo chat** cuando quieras repetir una prueba sin arrastrar el contexto anterior. El front indica la configuración activa y la que se usó en cada turno.
-4. Observa debajo de cada respuesta **Entrada, Salida, Total y Llamadas**. Si la API informa caché, sus tokens ya se incluyen en Entrada. Abre **Ver contexto enviado**, **Ver fragmentos recuperados** y **Ver actividad de este turno**, según el caso. Los números dependen de la ejecución y el modelo.
+3. Usa **Guardar como nueva y activar** para conservar cada variante. Usa **Nuevo chat** cuando quieras repetir una prueba sin arrastrar el contexto anterior. El chat indica la configuración activa. Cada respuesta muestra la configuración y el modelo usados en ese turno.
+4. Observa debajo de cada respuesta **Entrada, Salida, Total y Llamadas**. Si la API informa caché, sus tokens ya se incluyen en Entrada. Abre **Ver JSON enviado a OpenAI**, **Ver fragmentos recuperados** y **Ver actividad de este turno**, según el caso. El panel muestra el cuerpo JSON de cada llamada del turno con los campos originales de la API. Los encabezados de autenticación quedan en el servidor. Los números dependen de la ejecución y el modelo.
 
 ## 1. Línea base · Pregunta sola
 
-- **Configuración.** Activa **Pregunta sola**. Deja las instrucciones vacías y selecciona **Sin documento**. Desactiva historial y las dos opciones de herramientas.
+- **Configuración.** Activa **Pregunta sola**. Deja las instrucciones vacías y selecciona **Sin documento**. Desactiva el historial, la consulta de avance y el listado de notas.
 - **Pregunta.** «¿Con cuánto apruebo el Simulador 3 y cuántas veces puedo repetirlo?».
 - **Observa.** Guarda la respuesta tal como salga. Puede señalar que le faltan datos, ofrecer información genérica o confundir las reglas de nuestro simulador con las de una certificación externa. Revisa los tokens de entrada.
 
@@ -49,7 +49,7 @@
 
 ## 5. Herramientas · Consultar avance por cédula
 
-1. Guarda una variante **Avance del alumno** con **Sin documento**, **Habilitar consulta de avance** y **Usar historial del chat** activados. Deja desactivado el listado de notas.
+1. Guarda una variante **Avance del alumno** con **Sin documento** y **Llamada directa (function calling)** en **Consulta de avance por cédula ficticia**. Activa **Usar historial del chat**. Deja desactivado el listado de notas.
 2. Usa estas instrucciones.
 
    > Ayuda al alumno con el Simulador 3. Si pregunta por su avance y aún no tienes su cédula de práctica, pídesela. Cuando la proporcione, consulta su avance con la herramienta. Si el ID no existe, pídele que revise los diez dígitos. Conserva los ceros iniciales y comunica el porcentaje de la herramienta.
@@ -73,11 +73,12 @@
 
 ## 6. Agente y MCP
 
-Duplica **Manual con RAG** y activa **Consulta de avance**. Deja desactivado el listado de notas. Añade a las instrucciones: «Para el avance individual, usa la herramienta y solicita la cédula si hace falta. Para las reglas, consulta el manual».
-
-Pregunta en un chat nuevo «Mi cédula ficticia es 0000000002. ¿Cuánto llevo avanzado y cuántas veces puedo rendir este simulador?». Abre los fragmentos y la actividad de ese turno. Identifica cuál de las dos fuentes respalda cada parte de la respuesta.
-
-**MCP, a nivel conceptual.** Imagina que la plataforma académica expone la misma consulta en un servidor MCP. Un segundo asistente podría descubrir y llamar a esa herramienta mediante el protocolo. La operación de consultar el avance sigue en nuestro sistema. El servidor MCP no forma parte de la implementación del laboratorio.
+1. Antes de clase, configura `MCP_SERVER_URL` y `MCP_ACCESS_TOKEN` según el [README](../README.md). Para la primera comparación, usa **Sin documento**, sin historial y sin listado de notas.
+2. Crea dos configuraciones, **Avance directo** y **Avance por MCP**. Selecciona **Llamada directa (function calling)** en la primera y **Servidor MCP** en la segunda.
+3. En un chat nuevo para cada modo, pregunta «Usa la herramienta para consultar el avance de la cédula ficticia 0000000002». El avance del catálogo es **49 %**.
+4. En ambos modos, abre **Ver JSON enviado a OpenAI**. En el modo directo, el backend recibe la solicitud de ejecutar `consultar_avance` y devuelve el resultado a OpenAI como `function_call_output`. En MCP, el backend indica la URL y OpenAI actúa como cliente MCP. Abre **Ver traza MCP de OpenAI** para identificar `mcp_list_tools` y `mcp_call`.
+5. Ejecuta `npm run demo:tutores -- 0000000002` con el token configurado. El cliente de tutores usa la misma ruta para descubrir la herramienta (`tools/list`) e invocarla (`tools/call`). Así se ve la interoperabilidad: distintos clientes usan el mismo contrato y la misma lógica de consulta.
+6. Para combinar fuentes, duplica **Manual con RAG**, selecciona **Servidor MCP** y añade «Para el avance individual, usa la herramienta. Para las reglas, consulta el manual». Pregunta «Mi cédula ficticia es 0000000002. ¿Cuánto llevo avanzado y cuántas veces puedo rendir este simulador?». Abre los fragmentos y la traza MCP para identificar la evidencia de cada parte.
 
 ## 7. Seguridad · Observar cuatro casos
 

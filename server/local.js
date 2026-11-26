@@ -2,6 +2,9 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import lab from "../api/lab.js";
+import mcp from "../api/mcp.js";
+
+const apiRoutes = new Map([["/api/lab", lab], ["/api/mcp", mcp]]);
 
 const types = { html: "text/html; charset=utf-8", js: "text/javascript; charset=utf-8", css: "text/css; charset=utf-8", pdf: "application/pdf" };
 const port = Number(process.env.PORT || 3000);
@@ -9,9 +12,10 @@ const port = Number(process.env.PORT || 3000);
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://localhost:" + port);
-    if (url.pathname === "/api/lab") {
+    const api = apiRoutes.get(url.pathname);
+    if (api) {
       const withBody = !["GET", "HEAD"].includes(req.method);
-      const result = await lab.fetch(new Request(url, {
+      const result = await api.fetch(new Request(url, {
         method: req.method, headers: req.headers,
         ...(withBody && { body: Readable.toWeb(req), duplex: "half" }),
       }));

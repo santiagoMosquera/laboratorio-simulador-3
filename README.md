@@ -16,7 +16,7 @@ Taller de KrakeDev para AWS Certified AI Practitioner (AIF-C01). La interfaz y e
    LAB_ACCESS_CODE=un-codigo-para-tu-clase
    ```
 
-6. Ejecuta `npm ci` y luego `npm run dev`. No hay dependencias externas que instalar. Abre [http://localhost:3000](http://localhost:3000). Si cambias una variable, reinicia el proceso.
+6. Ejecuta `npm ci` y luego `npm run dev`. Abre [http://localhost:3000](http://localhost:3000). Si cambias una variable, reinicia el proceso.
 7. Abre **Configuración**, escribe el código del laboratorio en **Acceso a la API** y vuelve a **Chat**. En la configuración inicial **Pregunta sola** ya puedes escribir `¿Con cuánto apruebo el Simulador 3?`.
 8. Sigue [el guion completo](docs/GUION_TALLER.md). Los PDF descargables están dentro de la aplicación, en Configuración al elegir un modo documental. También están en `public/`.
 
@@ -28,7 +28,7 @@ La aplicación guarda configuraciones, chats, resultados y referencias en `sessi
 
 1. Sube el contenido de la carpeta `laboratorio-simulador` a un repositorio de GitHub. Comprueba que `package.json` y `vercel.json` estén en la raíz del repositorio y que `.env.local` quede excluido.
 2. En [Vercel](https://vercel.com/new), elige **Add New → Project** e importa el repositorio. Si está en una subcarpeta, elige esa carpeta como **Root Directory**.
-3. Usa el preset **Other**. El repositorio ya declara `public` como directorio de salida en `vercel.json`. No necesita un paso de compilación. La ruta `/api/lab` se despliega como Vercel Function.
+3. Usa el preset **Other**. El repositorio ya declara `public` como directorio de salida en `vercel.json`. No necesita un paso de compilación. Las rutas `/api/lab` y `/api/mcp` se despliegan como Vercel Functions.
 4. En **Environment Variables**, agrega `OPENAI_API_KEY`, `OPENAI_MODEL` y `LAB_ACCESS_CODE` por separado. Selecciona **Production** y, si harás pruebas con previsualizaciones, habilita también **Preview**.
 5. Pulsa **Deploy**. Visita la URL, introduce el código en **Configuración** y verifica primero **Pregunta sola**. Después carga el manual en el modo **RAG** y verifica que cambie a **Listo**.
 6. Comparte con los alumnos la URL y el código. Si cambias variables después de publicar, genera un nuevo despliegue.
@@ -37,16 +37,37 @@ La aplicación guarda configuraciones, chats, resultados y referencias en `sessi
 
 Desde el directorio del proyecto, ejecuta `npx vercel login` y `npx vercel link`. Agrega cada variable con `npx vercel env add NOMBRE production` y, para previsualizaciones, repite con `preview`. Prueba con `npx vercel deploy` y publica con `npx vercel deploy --prod`. Las órdenes de `env add` piden el valor de forma interactiva. [Flujo oficial de Vercel](https://vercel.com/docs/projects/deploy-from-cli).
 
-## 3. Ubicar el front y el back
+## 3. Demostrar MCP
+
+1. En Vercel, agrega **`MCP_ACCESS_TOKEN`** como secreto del servidor. Usa un token aleatorio, distinto del código del laboratorio y de la clave de OpenAI. Puedes generarlo con `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`.
+2. Configura **`MCP_SERVER_URL`** con la URL HTTPS completa de la ruta, por ejemplo `https://tu-proyecto.vercel.app/api/mcp`. Vuelve a desplegar. La API de OpenAI necesita poder llegar a esa URL. Si usas un despliegue protegido por Vercel, usa para el taller una URL donde la API pueda alcanzar la ruta y autenticarse con el token MCP.
+3. En el frontend, abre **Configuración → Consulta de avance por cédula ficticia**. Crea una variante con **Llamada directa (function calling)** y otra con **Servidor MCP**. Para una comparación limpia, desactiva el historial, el listado de notas y el documento. En chats nuevos pregunta en ambas variantes «Usa la herramienta para consultar el avance de la cédula ficticia 0000000002». El catálogo devuelve **49 %**.
+4. Compara **Ver JSON enviado a OpenAI** en ambas respuestas. En la directa aparece `function_call_output` en una segunda llamada de nuestro backend. En MCP aparece la definición del servidor y puedes abrir **Ver traza MCP de OpenAI** para ver `mcp_list_tools` y `mcp_call` cuando la API los devuelve. El visor oculta el token.
+
+El chat local también puede usar MCP si `.env.local` apunta a la URL HTTPS de Vercel y contiene el mismo token del servidor remoto. El cliente de tutores funciona contra el servidor local y contra Vercel.
+
+### Segundo cliente MCP · Asistente de tutores
+
+Desde otra terminal, con `MCP_ACCESS_TOKEN` configurado en `.env.local`, ejecuta:
+
+```sh
+npm run demo:tutores -- 0000000002
+```
+
+El cliente usa `MCP_SERVER_URL` si está configurada. En su ausencia se conecta a `http://127.0.0.1:3000/api/mcp`. Para forzar la ruta local con el servidor en ejecución, usa `npm run demo:tutores -- 0000000002 http://127.0.0.1:3000/api/mcp`. La consola muestra el catálogo con `tools/list` y el resultado con `tools/call`. Este cliente de demostración realiza la consulta directamente por MCP y puede funcionar sin una clave de OpenAI.
+
+## 4. Ubicar el front y el back
 
 | Archivo | Función |
 |---|---|
 | `public/index.html`, `styles.css`, `app.js` | Front. Chat, configuración, persistencia en la pestaña, evidencias y tokens. |
-| `api/lab.js` | Punto de entrada de la función de Vercel. |
+| `api/lab.js` | Punto de entrada del chat y la carga de PDF. |
+| `api/mcp.js`, `server/mcp.js` | Servidor MCP Streamable HTTP. Publica únicamente la herramienta de avance. |
+| `scripts/tutores.js` | Segundo cliente MCP para demostrar reutilización. |
 | `server/lab.js` | Adaptador de OpenAI. Sube e indexa el manual, envía preguntas, ejecuta las herramientas ficticias y reúne el consumo. |
 | `server/estudiantes.js` | Diez cédulas ficticias y porcentajes de avance. Incluye un listado de notas ficticias para la demostración de exposición. |
 | `server/local.js` | Servidor de desarrollo que usa el mismo backend. |
-| `test/lab.test.js` | Pruebas automatizadas con respuestas simuladas del proveedor. Ejecuta `npm test`. |
+| `test/lab.test.js`, `test/mcp.test.js` | Pruebas del adaptador con respuestas simuladas de OpenAI y del servidor con un cliente MCP. Ejecuta `npm test`. |
 
 ### Si algo falla
 
@@ -58,3 +79,5 @@ Desde el directorio del proyecto, ejecuta `npx vercel login` y `npx vercel link`
 - **Claves y datos de prueba.** El código del taller se usa para habilitar la API. Usa solamente los PDFs de práctica y las cédulas ficticias incluidas.
 
 [Documentación de File Search](https://developers.openai.com/api/docs/guides/tools-file-search) · [Llamadas a funciones](https://developers.openai.com/api/docs/guides/function-calling) · [Variables de Vercel](https://vercel.com/docs/environment-variables)
+
+[Documentación de MCP en OpenAI](https://developers.openai.com/api/docs/guides/tools-connectors-mcp)

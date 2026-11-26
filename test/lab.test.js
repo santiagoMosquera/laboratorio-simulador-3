@@ -25,7 +25,7 @@ function mock(...results) {
   const recorded = [];
   const api = async (url, options) => {
     assert.equal(options.headers.Authorization, "Bearer testing-only");
-    recorded.push({ path: new URL(url).pathname, body: typeof options.body === "string" ? JSON.parse(options.body) : options.body });
+    recorded.push({ path: new URL(url).pathname, raw: options.body, body: typeof options.body === "string" ? JSON.parse(options.body) : options.body });
     assert.ok(results.length, "Unexpected provider call");
     return Response.json(results.shift());
   };
@@ -59,6 +59,8 @@ test("una consulta base omite instrucciones, documentos, herramientas e historia
   for (const key of ["instructions", "tools", "previous_response_id"]) assert.ok(!(key in body));
   const data = await result.json();
   assert.equal(data.usage.total, 30);
+  assert.deepEqual(data.requestBodies, [provider.recorded[0].raw]);
+  assert.equal(data.requestBodies[0].includes("testing-only"), false);
   assert.equal(data.historyRef, null);
 });
 
@@ -105,6 +107,7 @@ test("consulta de avance devuelve el valor real del catálogo y suma las dos lla
   assert.equal(result.usage.entrada, 40);
   assert.equal(result.usage.cache, 10);
   assert.equal(result.usage.llamadas, 2);
+  assert.deepEqual(result.requestBodies, provider.recorded.map(call => call.raw));
 });
 
 test("el listado colectivo está aislado en la herramienta ficticia y requiere habilitarla", async () => {
@@ -124,5 +127,38 @@ test("el código del taller se comprueba antes de hacer llamadas", async () => {
   const provider = mock();
   const result = await handle(request("chat", { threadId, config: start, question: "Hola" }, session, "incorrecto"), env, provider.api);
   assert.equal(result.status, 401);
+  assert.equal(provider.recorded.length, 0);
+});
+
+test("el modo MCP envía solo la herramienta remota y conserva la traza sin mostrar el token", async () => {
+  const mcpEnv = { ...env, MCP_SERVER_URL: "https://simulador.example/api/mcp", MCP_ACCESS_TOKEN: "token-privado" };
+  const list = { type: "mcp_list_tools", server_label: "simulador_3", tools: [{ name: "consultar_avance" }] };
+  const call = { type: "mcp_call", server_label: "simulador_3", name: "consultar_avance",
+    arguments: '{"cedula":"0000000002"}', output: '{"encontrada":true,"cedula":"0000000002","avance":49}', error: null };
+  const provider = mock({ id: "resp-mcp", usage, output: [list, call, message] });
+  const result = await handle(request("chat", {
+    threadId, question: "¿Cuánto avance lleva la cédula 0000000002?", config: { ...start, progressTool: "mcp" },
+  }), mcpEnv, provider.api);
+  assert.equal(result.status, 200);
+  const data = await result.json();
+  assert.equal(provider.recorded.length, 1);
+  assert.deepEqual(provider.recorded[0].body.tools, [{
+    type: "mcp", server_label: "simulador_3", server_url: mcpEnv.MCP_SERVER_URL, authorization: mcpEnv.MCP_ACCESS_TOKEN,
+    allowed_tools: ["consultar_avance"], require_approval: "never",
+  }]);
+  assert.deepEqual(data.mcpTrace, [list, call]);
+  assert.equal(data.usage.llamadas, 1);
+  assert.equal(data.activity.length, 0);
+  assert.equal(JSON.stringify(data).includes(mcpEnv.MCP_ACCESS_TOKEN), false);
+  assert.equal(JSON.parse(data.requestBodies[0]).tools[0].authorization, "[oculto]");
+});
+
+test("el modo MCP informa que falta la configuración antes de llamar a OpenAI", async () => {
+  const provider = mock();
+  const result = await handle(request("chat", {
+    threadId, question: "Avance de 0000000002", config: { ...start, progressTool: "mcp" },
+  }), env, provider.api);
+  assert.equal(result.status, 503);
+  assert.match((await result.json()).error, /MCP_SERVER_URL/);
   assert.equal(provider.recorded.length, 0);
 });

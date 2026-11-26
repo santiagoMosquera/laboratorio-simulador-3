@@ -62,7 +62,13 @@
         <fieldset>
           <legend>Opciones de la prueba</legend>
           <label class="check"><input type="checkbox" id="history"> Usar historial del chat</label>
-          <label class="check"><input type="checkbox" id="progress"> Habilitar consulta de avance</label>
+          <label for="progress-tool">Consulta de avance por cédula ficticia</label>
+          <select id="progress-tool">
+            <option value="none">Desactivada</option>
+            <option value="direct">Llamada directa (function calling)</option>
+            <option value="mcp">Servidor MCP</option>
+          </select>
+          <p class="meta">Para comparar los dos modos, pregunta «¿Cuánto avance lleva la cédula 0000000002?» en un chat nuevo con cada modo.</p>
           <label class="check"><input type="checkbox" id="exposure"> Habilitar listado de notas ficticias para la demostración de exposición</label>
         </fieldset>
         <div class="actions">
